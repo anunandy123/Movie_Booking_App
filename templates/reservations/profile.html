@@ -1,0 +1,7 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your bookings | Smart Seat</title><link rel="stylesheet" href="{% static 'reservations/app.css' %}"></head>
+<body><main class="shell"><header class="masthead"><div><span class="kicker">PROFILE</span><h1>Your bookings.</h1></div><a class="secondary" href="/">Choose seats</a></header>
+<section>{% for booking in bookings %}<article class="selection"><strong>{{ booking.show.movie.title|default:'Seat reservation' }}</strong><p>{{ booking.status }} · {{ booking.total_amount }} · {{ booking.created_at }}</p><p>Seats: {% for item in booking.seats.all %}{{ item.seat }}{% if not forloop.last %}, {% endif %}{% empty %}Not assigned{% endfor %}</p><a href="{% url 'download_ticket' booking.id %}">Download ticket</a></article>{% empty %}<p class="subtle">No bookings yet.</p>{% endfor %}</section></main></body>
+</html>

@@ -1,0 +1,7 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Smart Seat Admin Dashboard</title><link rel="stylesheet" href="{% static 'reservations/app.css' %}"></head>
+<body><main class="shell"><header class="masthead"><div><span class="kicker">OPERATIONS</span><h1>Business dashboard.</h1></div><a class="secondary" href="{% url 'admin_report_csv' %}">Export CSV</a></header>
+<section class="layout"><div><div class="selection"><span>Total revenue</span><strong>{{ dashboard.revenue }}</strong></div><div class="selection"><span>Confirmed bookings</span><strong>{{ dashboard.bookings }}</strong></div><h2>Top movies</h2><ul>{% for item in dashboard.movies %}<li>{{ item.show__movie__title }} · {{ item.count }}</li>{% empty %}<li>No booking data yet.</li>{% endfor %}</ul></div><aside class="summary"><span class="kicker">PAYMENTS</span><h2>Health</h2>{% for item in dashboard.payment_status %}<p>{{ item.status }}: {{ item.count }} / {{ item.amount|default:0 }}</p>{% endfor %}<p>Cancelled bookings: {{ dashboard.cancellations }}</p><p>Refunded payments: {{ dashboard.refunds.count|default:0 }}</p></aside></section></main></body>
+</html>

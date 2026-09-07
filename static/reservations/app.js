@@ -9,6 +9,11 @@ let seats = [];
 let selected = new Set();
 let reservationId = null;
 let expiresAt = null;
+let stripe = null;
+let stripeElements = null;
+let paymentElement = null;
+const showId = new URLSearchParams(window.location.search).get('show_id');
+if (window.SMARTSEAT_STRIPE_KEY && window.Stripe) stripe = Stripe(window.SMARTSEAT_STRIPE_KEY);
 
 async function request(url, options = {}) {
   const response = await fetch(url, {headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}, ...options});
@@ -33,18 +38,33 @@ function render() {
 }
 
 async function refresh() {
-  try { seats = (await request('/api/seats/')).seats; render(); } catch (error) { message.textContent = error.message; }
+  try { seats = (await request(showId ? `/api/seats/?show_id=${encodeURIComponent(showId)}` : '/api/seats/')).seats; render(); } catch (error) { message.textContent = error.message; }
 }
 
 reserveButton.onclick = async () => {
   try {
-    const data = await request(reservationId ? `/api/reservations/${reservationId}/` : '/api/reservations/', {method: reservationId ? 'PATCH' : 'POST', body: JSON.stringify({seat_ids: [...selected]})});
-    reservationId = data.reservation_id; expiresAt = new Date(data.expires_at); confirmButton.disabled = false; message.textContent = 'Seats held. You can still change your selection.'; await refresh();
+    const payload = {seat_ids: [...selected]}; if (showId) payload.show_id = Number(showId);
+    const data = await request(reservationId ? `/api/reservations/${reservationId}/` : '/api/reservations/', {method: reservationId ? 'PATCH' : 'POST', body: JSON.stringify(payload)});
+    reservationId = data.reservation_id; expiresAt = new Date(data.expires_at); confirmButton.disabled = false; message.textContent = 'Seats held. Enter payment details to continue.'; await refresh();
   } catch (error) { message.textContent = error.message; await refresh(); }
 };
 
 confirmButton.onclick = async () => {
-  try { await request(`/api/reservations/${reservationId}/confirm/`, {method: 'POST'}); message.textContent = 'Payment complete. Your seats are confirmed.'; confirmButton.disabled = true; reserveButton.disabled = true; await refresh(); }
+  try {
+    const payment = await request(`/api/reservations/${reservationId}/payment/`, {method: 'POST', body: JSON.stringify({})});
+    if (!stripe || !payment.client_secret) throw new Error('Online payment is not configured for this environment.');
+    if (!stripeElements) {
+      stripeElements = stripe.elements({clientSecret: payment.client_secret});
+      paymentElement = stripeElements.create('payment');
+      paymentElement.mount('#payment-element');
+      message.textContent = 'Payment form loaded. Click Complete payment again.';
+      return;
+    }
+    const result = await stripe.confirmPayment({elements: stripeElements, redirect: 'if_required'});
+    if (result.error) throw new Error(result.error.message);
+    await request(`/api/reservations/${reservationId}/confirm/`, {method: 'POST'});
+    message.textContent = 'Payment verified. Your seats are confirmed.'; confirmButton.disabled = true; reserveButton.disabled = true; await refresh();
+  }
   catch (error) { message.textContent = error.message; }
 };
 

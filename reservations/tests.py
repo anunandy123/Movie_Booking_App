@@ -1,11 +1,13 @@
 from datetime import timedelta
 import json
+from unittest.mock import patch
 
 from django.test import TestCase
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from .models import Reservation, ReservationSeat, Seat
-from .services import confirm_reservation, reserve_seats
+from .models import Booking, Movie, PaymentTransaction, Reservation, ReservationSeat, Review, Seat, Show, Theater
+from .services import confirm_reservation, create_payment, record_payment_result, reserve_seats
 
 
 class ReservationServiceTests(TestCase):
@@ -31,12 +33,11 @@ class ReservationServiceTests(TestCase):
         self.assertEqual(replacement.seats.get(), self.seats[0])
         self.assertFalse(ReservationSeat.objects.filter(reservation_id=reservation.id).exists())
 
-    def test_confirmation_is_permanent(self):
+    def test_direct_confirmation_is_rejected_without_payment(self):
         reservation = reserve_seats("session-one", [self.seats[0].id])
-        confirmed = confirm_reservation("session-one", reservation.id)
-        self.assertEqual(confirmed.status, Reservation.Status.CONFIRMED)
-        with self.assertRaisesMessage(ValueError, "no longer available"):
-            reserve_seats("session-two", [self.seats[0].id])
+        with self.assertRaisesMessage(ValueError, "Payment verification is required"):
+            confirm_reservation("session-one", reservation.id)
+        self.assertEqual(reservation.status, Reservation.Status.HOLD)
 
 
 class ReservationViewTests(TestCase):
@@ -46,7 +47,7 @@ class ReservationViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["seats"]), 48)
 
-    def test_reservation_can_be_created_and_confirmed(self):
+    def test_reservation_cannot_be_confirmed_without_verified_payment(self):
         seat = Seat.objects.get(row="A", number=1)
         response = self.client.post(
             "/api/reservations/",
@@ -57,8 +58,7 @@ class ReservationViewTests(TestCase):
         reservation_id = response.json()["reservation_id"]
 
         response = self.client.post(f"/api/reservations/{reservation_id}/confirm/")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], Reservation.Status.CONFIRMED)
+        self.assertEqual(response.status_code, 402)
 
     def test_reservation_cannot_be_confirmed_by_another_session(self):
         seat = Seat.objects.get(row="A", number=1)
@@ -67,9 +67,58 @@ class ReservationViewTests(TestCase):
             data=json.dumps({"seat_ids": [seat.id]}),
             content_type="application/json",
         )
+        self.assertEqual(response.status_code, 200)
         reservation_id = response.json()["reservation_id"]
 
         other_client = self.client_class()
         response = other_client.post(f"/api/reservations/{reservation_id}/confirm/")
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 402)
+
+
+class PaymentWorkflowTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user("payer", "payer@example.com", "password")
+        self.seat = Seat.objects.get(row="A", number=1)
+
+    def test_verified_payment_creates_one_booking_and_duplicate_is_idempotent(self):
+        reservation = reserve_seats("payment-session", [self.seat.id], user=self.user)
+        payment = create_payment(reservation, 12.50)
+        with patch("reservations.tasks.email_ticket.delay"):
+            booking = record_payment_result(payment.provider_order_id, PaymentTransaction.Status.PAID, "txn_123")
+            duplicate = record_payment_result(payment.provider_order_id, PaymentTransaction.Status.PAID, "txn_123")
+        self.assertEqual(booking.id, duplicate.id)
+        self.assertEqual(Booking.objects.count(), 1)
+
+    def test_failed_payment_releases_seats_without_losing_transaction_record(self):
+        reservation = reserve_seats("payment-session", [self.seat.id], user=self.user)
+        payment = create_payment(reservation, 12.50)
+        self.assertIsNone(record_payment_result(payment.provider_order_id, PaymentTransaction.Status.FAILED, "txn_failed", "Declined"))
+        self.assertFalse(ReservationSeat.objects.filter(reservation=reservation).exists())
+        self.assertEqual(PaymentTransaction.objects.get(pk=payment.pk).status, PaymentTransaction.Status.FAILED)
+
+
+class MovieManagementTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user("viewer", "viewer@example.com", "password")
+        self.movie = Movie.objects.create(title="Past Feature", trailer_url="https://www.youtube.com/watch?v=abc123")
+
+    def test_trailer_is_restricted_to_youtube_and_embeds_privately(self):
+        self.assertEqual(self.movie.youtube_video_id, "abc123")
+        self.assertIn("youtube-nocookie.com/embed/abc123", self.movie.trailer_embed_url)
+        self.movie.trailer_url = "https://evil.example/video"
+        with self.assertRaises(Exception):
+            self.movie.full_clean()
+
+    def test_only_a_viewer_who_attended_can_review(self):
+        self.client.force_login(self.user)
+        response = self.client.post(f"/api/movies/{self.movie.id}/review/", data=json.dumps({"rating": 5, "body": "Great"}), content_type="application/json")
+        self.assertEqual(response.status_code, 403)
+
+        theater = Theater.objects.create(name="Main", city="Pune")
+        show = Show.objects.create(movie=self.movie, theater=theater, starts_at=timezone.now() - timedelta(hours=2), ticket_price=10)
+        reservation = reserve_seats("review-session", [Seat.objects.get(row="A", number=1).id], user=self.user)
+        Booking.objects.create(user=self.user, show=show, reservation=reservation, total_amount=10)
+        response = self.client.post(f"/api/movies/{self.movie.id}/review/", data=json.dumps({"rating": 5, "body": "Great"}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Review.objects.get(movie=self.movie, user=self.user).is_verified_viewer)
 

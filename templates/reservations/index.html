@@ -26,11 +26,14 @@
         <div id="selection" class="selection"><span>No seats selected</span></div>
         <div class="timer-row"><span>Hold expires in</span><strong id="timer">--:--</strong></div>
         <button id="reserve" class="primary" disabled>Hold selected seats <span>→</span></button>
+        <div id="payment-element"></div>
         <button id="confirm" class="secondary" disabled>Complete payment</button>
         <p id="message" class="message" role="status"></p>
       </aside>
     </section>
   </main>
+  {% if stripe_publishable_key %}<script src="https://js.stripe.com/v3/"></script>{% endif %}
+  <script>window.SMARTSEAT_STRIPE_KEY = "{{ stripe_publishable_key|default:''|escapejs }}";</script>
   <script src="{% static 'reservations/app.js' %}"></script>
 </body>
 </html>
