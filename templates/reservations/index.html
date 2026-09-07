@@ -1,0 +1,36 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Smart Seat / Live reservation</title>
+  <link rel="stylesheet" href="{% static 'reservations/app.css' %}">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div><span class="kicker">NORTHLIGHT CINEMA · SCREEN 01</span><h1>Choose your view.</h1></div>
+      <div class="live"><span></span> Live availability</div>
+    </header>
+    <section class="layout">
+      <div class="seat-panel">
+        <div class="screen">SCREEN</div>
+        <div id="seat-map" class="seat-map" aria-label="Seat selection"></div>
+        <div class="legend"><span><i class="available"></i>Available</span><span><i class="selected"></i>Selected</span><span><i class="booked"></i>Booked</span></div>
+      </div>
+      <aside class="summary">
+        <div><span class="kicker">YOUR RESERVATION</span><h2>Make it yours.</h2></div>
+        <p class="subtle">Your seats stay on hold for two minutes while you complete payment.</p>
+        <div id="selection" class="selection"><span>No seats selected</span></div>
+        <div class="timer-row"><span>Hold expires in</span><strong id="timer">--:--</strong></div>
+        <button id="reserve" class="primary" disabled>Hold selected seats <span>→</span></button>
+        <button id="confirm" class="secondary" disabled>Complete payment</button>
+        <p id="message" class="message" role="status"></p>
+      </aside>
+    </section>
+  </main>
+  <script src="{% static 'reservations/app.js' %}"></script>
+</body>
+</html>
