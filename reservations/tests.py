@@ -41,11 +41,27 @@ class ReservationServiceTests(TestCase):
 
 
 class ReservationViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.movie = Movie.objects.create(title="Checkout Movie")
+        cls.theater = Theater.objects.create(name="Checkout Theater", city="Test")
+        cls.show = Show.objects.create(
+            movie=cls.movie,
+            theater=cls.theater,
+            starts_at=timezone.now() + timedelta(days=1),
+            ticket_price="12.50",
+        )
+
     def test_index_and_seat_api_are_available(self):
         self.assertEqual(self.client.get("/").status_code, 200)
         response = self.client.get("/api/seats/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["seats"]), 48)
+
+    def test_booking_page_exposes_future_show_selection(self):
+        response = self.client.get("/")
+        self.assertContains(response, f'value="{self.show.id}"')
+        self.assertContains(response, "Checkout Movie")
 
     def test_reservation_cannot_be_confirmed_without_verified_payment(self):
         seat = Seat.objects.get(row="A", number=1)
@@ -73,6 +89,19 @@ class ReservationViewTests(TestCase):
         other_client = self.client_class()
         response = other_client.post(f"/api/reservations/{reservation_id}/confirm/")
         self.assertEqual(response.status_code, 402)
+
+    def test_payment_api_returns_json_auth_error(self):
+        seat = Seat.objects.get(row="A", number=1)
+        response = self.client.post(
+            "/api/reservations/",
+            data=json.dumps({"seat_ids": [seat.id], "show_id": self.show.id}),
+            content_type="application/json",
+        )
+        payment_response = self.client.post(
+            f"/api/reservations/{response.json()['reservation_id']}/payment/"
+        )
+        self.assertEqual(payment_response.status_code, 401)
+        self.assertEqual(payment_response.json()["error"], "Sign in before starting payment.")
 
 
 class PaymentWorkflowTests(TestCase):

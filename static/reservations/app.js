@@ -4,6 +4,7 @@ const reserveButton = document.querySelector('#reserve');
 const confirmButton = document.querySelector('#confirm');
 const timer = document.querySelector('#timer');
 const message = document.querySelector('#message');
+const showSelect = document.querySelector('#show-select');
 const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 let seats = [];
 let selected = new Set();
@@ -12,11 +13,15 @@ let expiresAt = null;
 let stripe = null;
 let stripeElements = null;
 let paymentElement = null;
-const showId = new URLSearchParams(window.location.search).get('show_id');
+let showId = new URLSearchParams(window.location.search).get('show_id') || showSelect?.value || '';
 if (window.SMARTSEAT_STRIPE_KEY && window.Stripe) stripe = Stripe(window.SMARTSEAT_STRIPE_KEY);
 
 async function request(url, options = {}) {
   const response = await fetch(url, {headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}, ...options});
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(response.status === 401 ? 'Sign in before starting payment.' : `Request failed (${response.status}).`);
+  }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Something went wrong.');
   return data;
@@ -34,16 +39,28 @@ function render() {
   });
   const labels = seats.filter(seat => selected.has(seat.id)).map(seat => seat.label);
   selection.innerHTML = labels.length ? `<strong>${labels.join('  ·  ')}</strong>` : '<span>No seats selected</span>';
-  reserveButton.disabled = !labels.length;
+  reserveButton.disabled = !labels.length || !showId;
 }
 
+showSelect?.addEventListener('change', () => {
+  showId = showSelect.value;
+  reservationId = null;
+  expiresAt = null;
+  selected.clear();
+  confirmButton.disabled = true;
+  message.textContent = showId ? 'Show selected. Choose your seats.' : 'Choose a show before selecting seats.';
+  refresh();
+});
+
 async function refresh() {
-  try { seats = (await request(showId ? `/api/seats/?show_id=${encodeURIComponent(showId)}` : '/api/seats/')).seats; render(); } catch (error) { message.textContent = error.message; }
+  if (!showId) { seats = []; render(); return; }
+  try { seats = (await request(`/api/seats/?show_id=${encodeURIComponent(showId)}`)).seats; render(); } catch (error) { message.textContent = error.message; }
 }
 
 reserveButton.onclick = async () => {
   try {
-    const payload = {seat_ids: [...selected]}; if (showId) payload.show_id = Number(showId);
+    if (!showId) throw new Error('Choose a show before reserving seats.');
+    const payload = {seat_ids: [...selected], show_id: Number(showId)};
     const data = await request(reservationId ? `/api/reservations/${reservationId}/` : '/api/reservations/', {method: reservationId ? 'PATCH' : 'POST', body: JSON.stringify(payload)});
     reservationId = data.reservation_id; expiresAt = new Date(data.expires_at); confirmButton.disabled = false; message.textContent = 'Seats held. Enter payment details to continue.'; await refresh();
   } catch (error) { message.textContent = error.message; await refresh(); }

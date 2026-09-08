@@ -22,6 +22,15 @@
       </div>
       <aside class="summary">
         <div><span class="kicker">YOUR RESERVATION</span><h2>Make it yours.</h2></div>
+        <label for="show-select">Choose a show</label>
+        <select id="show-select" {% if not shows %}disabled{% endif %}>
+          <option value="">Select a movie and show time</option>
+          {% for show in shows %}
+            <option value="{{ show.id }}" {% if selected_show == show.id|stringformat:'s' %}selected{% endif %}>
+              {{ show.movie.title }} · {{ show.theater.name }} · {{ show.starts_at|date:"M j, g:i A" }} · {{ show.ticket_price }}
+            </option>
+          {% endfor %}
+        </select>
         <p class="subtle">Your seats stay on hold for two minutes while you complete payment.</p>
         <div id="selection" class="selection"><span>No seats selected</span></div>
         <div class="timer-row"><span>Hold expires in</span><strong id="timer">--:--</strong></div>

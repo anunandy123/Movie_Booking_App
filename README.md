@@ -1133,3 +1133,26 @@ The final application should provide a secure, scalable and user-friendly movie 
 **Movie → Discovery → Show → Seat Reservation → Payment → Booking → Ticket → Email → Movie → Verified Review**
 
 while maintaining **database consistency, payment security, concurrency safety and optimized performance**.
+
+## Deploy on Render
+
+The repository includes `render.yaml` for a Render Blueprint. In Render, choose **New > Blueprint**, connect this repository, and apply it. The Blueprint provisions:
+
+- A Django web service using Gunicorn and `/health/`
+- A Celery worker for asynchronous ticket email
+- PostgreSQL for production transactions and row locking
+- Redis-compatible Key Value storage for Celery
+
+After provisioning, add the environment variables marked `sync: false` in the Render dashboard, especially Stripe and SMTP credentials. Create the administrator from the web service shell:
+
+```bash
+python manage.py createsuperuser
+```
+
+Configure the Stripe webhook URL as:
+
+```text
+https://<your-render-host>/api/payments/webhook/
+```
+
+Render runs migrations and static collection before starting the web process. Keep `DJANGO_DEBUG=False`, use the generated `DJANGO_SECRET_KEY`, and never commit `.env` or production credentials.

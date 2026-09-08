@@ -19,7 +19,14 @@ from .services import cancel_booking, create_payment, confirm_reservation, recor
 def index(request):
     if not request.session.session_key:
         request.session.create()
-    return render(request, "reservations/index.html")
+    from django.conf import settings
+    shows = Show.objects.filter(starts_at__gt=timezone.now()).select_related("movie", "theater").order_by("starts_at")
+    selected_show = request.GET.get("show_id")
+    return render(request, "reservations/index.html", {
+        "shows": shows,
+        "selected_show": selected_show,
+        "stripe_publishable_key": settings.STRIPE_PUBLISHABLE_KEY,
+    })
 
 
 def _payload(request):
@@ -102,9 +109,10 @@ def confirm(request, reservation_id):
         return JsonResponse({"error": str(error)}, status=409)
 
 
-@login_required
 @require_http_methods(["POST"])
 def create_payment_order(request, reservation_id):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Sign in before starting payment."}, status=401)
     try:
         try:
             reservation = Reservation.objects.get(id=reservation_id, session_key=request.session.session_key, user=request.user)
@@ -118,9 +126,10 @@ def create_payment_order(request, reservation_id):
         return JsonResponse({"error": str(error)}, status=409)
 
 
-@login_required
 @require_http_methods(["POST"])
 def retry_payment_order(request, payment_id):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Sign in before retrying payment."}, status=401)
     try:
         payment = PaymentTransaction.objects.get(id=payment_id, reservation__user=request.user)
         retry = retry_payment(payment)
