@@ -5,3 +5,4 @@ stripe>=11,<13
 celery>=5.4,<6
 reportlab>=4.2,<5
 qrcode[pil]>=8,<9
+whitenoise>=6.6,<7
